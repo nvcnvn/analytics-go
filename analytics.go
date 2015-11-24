@@ -1,6 +1,7 @@
 package analytics
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 
@@ -105,35 +106,35 @@ type Alias struct {
 // when the Size limit is exceeded. Set Verbose to true to enable
 // logging output.
 type Client struct {
-	Endpoint string
-	Interval time.Duration
-	Size     int
-	Logger   *log.Logger
-	Verbose  bool
-	Client   http.Client
-	key      string
-	msgs     chan interface{}
-	quit     chan struct{}
-	shutdown chan struct{}
-	uid      func() string
-	now      func() time.Time
+	Endpoint   string
+	Interval   time.Duration
+	Size       int
+	Logger     *log.Logger
+	Verbose    bool
+	HTTPClient *http.Client
+	key        string
+	msgs       chan interface{}
+	quit       chan struct{}
+	shutdown   chan struct{}
+	uid        func() string
+	now        func() time.Time
 }
 
 // New client with write key.
 func New(key string) *Client {
 	c := &Client{
-		Endpoint: Endpoint,
-		Interval: 5 * time.Second,
-		Size:     250,
-		Logger:   log.New(os.Stderr, "segment ", log.LstdFlags),
-		Verbose:  false,
-		Client:   *http.DefaultClient,
-		key:      key,
-		msgs:     make(chan interface{}, 100),
-		quit:     make(chan struct{}),
-		shutdown: make(chan struct{}),
-		now:      time.Now,
-		uid:      uid,
+		Endpoint:   Endpoint,
+		Interval:   5 * time.Second,
+		Size:       250,
+		Logger:     log.New(os.Stderr, "segment ", log.LstdFlags),
+		Verbose:    false,
+		HTTPClient: http.DefaultClient,
+		key:        key,
+		msgs:       make(chan interface{}, 100),
+		quit:       make(chan struct{}),
+		shutdown:   make(chan struct{}),
+		now:        time.Now,
+		uid:        uid,
 	}
 
 	go c.loop()
@@ -234,11 +235,12 @@ func (c *Client) send(msgs []interface{}) {
 		return
 	}
 
-	batch := new(Batch)
-	batch.Messages = msgs
-	batch.MessageId = c.uid()
-	batch.SentAt = timestamp(c.now())
-	batch.Context = DefaultContext
+	batch := &Batch{
+		Messages:  msgs,
+		MessageId: c.uid,
+		SentAt:    timestamp(c.now()),
+		Context:   DefaultContext,
+	}
 
 	b, err := json.Marshal(batch)
 	if err != nil {
@@ -246,19 +248,19 @@ func (c *Client) send(msgs []interface{}) {
 		return
 	}
 
-	url := c.Endpoint + "/v1/batch"
+	url := fmt.Sprintf("%s/v1/batch", c.Endpoint)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(b))
 	if err != nil {
 		c.log("error creating request: %s", err)
 		return
 	}
 
-	req.Header.Add("User-Agent", "analytics-go (version: "+Version+")")
+	req.Header.Add("User-Agent", fmt.Sprintf(`analytics-go (version: "%s")`, Version))
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Content-Length", string(len(b)))
 	req.SetBasicAuth(c.key, "")
 
-	res, err := c.Client.Do(req)
+	res, err := c.HTTPClient.Do(req)
 	if err != nil {
 		c.log("error sending request: %s", err)
 		return
