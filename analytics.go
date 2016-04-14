@@ -222,7 +222,7 @@ func (c *Client) Track(msg *Track) error {
 // QueueRawMessage usefull for sending encoded message.
 func (c *Client) QueueRawMessage(msg json.RawMessage) {
 	c.once.Do(c.startLoop)
-	c.msgs <- msg
+	c.msgs <- &msg
 }
 
 func (c *Client) startLoop() {
